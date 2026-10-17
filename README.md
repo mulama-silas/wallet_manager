@@ -33,6 +33,16 @@ SQLite tables store users, transactions, and monthly category budgets. Passwords
 
 Backups are SQLite files under `backups/`. Restoring a backup first creates a safety backup of the current database. CSV exports are saved under `exports/` and contain only the signed-in user's transactions.
 
+## Tests
+
+Run the isolated SQLite tests with:
+
+```powershell
+python -m unittest tests.py
+```
+
+The tests use temporary databases and do not access `wallet.sqlite3` or the live JSON archive.
+
 ## Account menu
 
 1. Add transaction
@@ -51,6 +61,7 @@ Backups are SQLite files under `backups/`. Restoring a backup first creates a sa
 
 - `wallet.py` — CLI, reports, transaction actions, budgets, and CSV export
 - `storage.py` — SQLite schema, JSON migration, balance-safe transaction updates, and backups
+- `tests.py` — isolated tests for migration, balance updates, filters, budgets, backups, and duplicate emails
 - `modules.py` — email validation and password hashing / strength helpers
 - `TRANSACTIONS.json` — legacy import source; retained as a sanitized archive after migration
 - `rewrite_transactions.py` — opens the app's SQLite store and performs the one-time legacy import if needed
