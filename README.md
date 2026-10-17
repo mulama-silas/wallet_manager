@@ -33,6 +33,8 @@ SQLite tables store users, transactions, and monthly category budgets. Passwords
 
 Backups are SQLite files under `backups/`. Restoring a backup first creates a safety backup of the current database. CSV exports are saved under `exports/` and contain only the signed-in user's transactions.
 
+Application events are written to the SQLite `logs` table and to `logs/wallet.log`. The file log rotates at 1 MB and keeps up to five older files; the database retains the latest 5,000 events. Passwords, email addresses, notes, and transaction amounts are excluded from log messages.
+
 ## Tests
 
 Run the isolated SQLite tests with:
@@ -61,6 +63,7 @@ The tests use temporary databases and do not access `wallet.sqlite3` or the live
 
 - `wallet.py` — CLI, reports, transaction actions, budgets, and CSV export
 - `storage.py` — SQLite schema, JSON migration, balance-safe transaction updates, and backups
+- `logging_config.py` — rotating file logging setup
 - `tests.py` — isolated tests for migration, balance updates, filters, budgets, backups, and duplicate emails
 - `modules.py` — email validation and password hashing / strength helpers
 - `TRANSACTIONS.json` — legacy import source; retained as a sanitized archive after migration

@@ -126,14 +126,14 @@ def get_user_data(data):
         try:
             salary = float(input('Enter your salary: '))
             while True:
-                password = getpass('Enter your password: ').strip()
+                password = getpass('Enter your password: ', echo_char='*').strip()
                 if len(password) < 8:
                     print('Password must be at least 8 characters long!')
                     continue
                 if check_pass_strength(password):
                     print(check_pass_strength(password))
                     continue
-                confirm_password = getpass('Confirm your password: ').strip()
+                confirm_password = getpass('Confirm your password: ', echo_char='*').strip()
                 if password != confirm_password:
                     print('Passwords do not match!')
                 else:
@@ -161,7 +161,7 @@ def login(data):
         email = input('Enter your email: ').strip()
         if validate_email(email):
             break
-    password = getpass('Enter your password: ').strip()
+    password = getpass('Enter your password: ', echo_char='*').strip()
     # verify email and password
     for user_id,user_data in data.items():
         if user_data['email'] == email:

@@ -1,6 +1,7 @@
 """Command-line personal finance tracker."""
 
 import csv
+import logging
 import os
 import sys
 import ctypes
@@ -17,6 +18,7 @@ from modules import (
     verify_password,
 )
 from storage import WalletStore
+from logging_config import configure_logging
 
 
 EXPENSE_CATEGORIES = [
@@ -28,6 +30,7 @@ INCOME_CATEGORIES = [
     'Gift', 'Rental Income', 'Commission', 'Business', 'Savings',
 ]
 TRANSACTION_TYPES = ['Expense', 'Income']
+logger = logging.getLogger('wallet.cli')
 
 
 def _terminal_supports_color():
@@ -181,7 +184,7 @@ def register_user(store):
 
     salary = prompt_amount('Starting balance / salary')
     while True:
-        password = getpass('Password (at least 8 characters): ').strip()
+        password = getpass('Password (at least 8 characters): ', echo_char='*').strip()
         if len(password) < 8:
             print('Password must be at least 8 characters long.')
             continue
@@ -189,7 +192,7 @@ def register_user(store):
         if feedback:
             print(feedback)
             continue
-        confirmation = getpass('Confirm password: ').strip()
+        confirmation = getpass('Confirm password: ', echo_char='*').strip()
         if password != confirmation:
             print('Passwords do not match.')
             continue
@@ -206,11 +209,13 @@ def register_user(store):
 def login_user(store):
     email = input('Email: ').strip()
     user = store.user_by_email(email)
-    password = getpass('Password: ').strip()
+    password = getpass('Password: ', echo_char='*').strip()
     if user and verify_password(user['stored_salt'], user['stored_hash'], password):
         print(f'Welcome, {user["name"]}!')
+        store.log_event('INFO', 'Authentication succeeded')
         return user['id']
     print('Invalid email or password.')
+    store.log_event('WARNING', 'Authentication failed')
     return None
 
 
@@ -400,6 +405,7 @@ def create_report(store, user_id):
     print(f'Net:            Ksh {income - expenses:,.2f}')
     print(f'Current balance: Ksh {user["balance"]:,.2f}')
     print(f'Transactions: {count}')
+    store.log_event('INFO', 'Wallet report generated')
     if category_totals:
         largest = max(category_totals.values())
         smallest = min(category_totals.values())
@@ -463,6 +469,7 @@ def export_csv(store, user_id):
         for row in rows:
             writer.writerow({key: row[key] for key in writer.fieldnames})
     print(f'Exported {len(rows)} transactions for {user["name"]} to {path}.')
+    store.log_event('INFO', 'CSV export completed')
 
 
 def backup_menu(store):
@@ -568,26 +575,47 @@ def account_menu(store, user_id):
 
 
 def main():
-    print_billboard()
-    store = WalletStore()
-    while True:
-        print(f'\n{color("GET STARTED", "1;97")}')
-        print(f'  {color("1", "32;1")}. Register')
-        print(f'  {color("2", "33;1")}. Login')
-        print(f'  {color("0", "31;1")}. Exit')
-        choice = input('Choose an option: ').strip()
-        if choice == '1':
-            register_user(store)
-        elif choice == '2':
-            user_id = login_user(store)
-            if user_id:
-                account_menu(store, user_id)
-        elif choice == '0':
-            print('Goodbye!')
-            break
+    configure_logging()
+    logger.info('Wallet application starting')
+    store = None
+    try:
+        print_billboard()
+        store = WalletStore()
+        store.log_event('INFO', 'Wallet application started')
+        while True:
+            print(f'\n{color("GET STARTED", "1;97")}')
+            print(f'  {color("1", "32;1")}. Register')
+            print(f'  {color("2", "33;1")}. Login')
+            print(f'  {color("0", "31;1")}. Exit')
+            choice = input('Choose an option: ').strip()
+            if choice == '1':
+                register_user(store)
+            elif choice == '2':
+                user_id = login_user(store)
+                if user_id:
+                    account_menu(store, user_id)
+            elif choice == '0':
+                print('Goodbye!')
+                break
+            else:
+                print('Invalid choice.')
+    except KeyboardInterrupt:
+        print('\nGoodbye!')
+        if store is not None:
+            store.log_event('INFO', 'Wallet application interrupted by user')
         else:
-            print('Invalid choice.')
-    store.close()
+            logger.info('Wallet application interrupted by user')
+    except Exception:
+        logger.exception('Unexpected wallet application error')
+        if store is not None:
+            store.log_event('ERROR', 'Unexpected wallet application error')
+        print('The app encountered an unexpected error. See logs/wallet.log for details.')
+    finally:
+        if store is not None:
+            store.log_event('INFO', 'Wallet application stopped')
+            store.close()
+        else:
+            logger.info('Wallet application stopped')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 """SQLite persistence for the personal finance tracker."""
 
 import json
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / 'wallet.sqlite3'
 LEGACY_JSON = ROOT / 'TRANSACTIONS.json'
 DEFAULT_BACKUP_DIR = ROOT / 'backups'
+logger = logging.getLogger('wallet.storage')
 
 
 class WalletStore:
@@ -22,6 +24,7 @@ class WalletStore:
         self.connection = self._connect()
         self._create_schema()
         self._migrate_json_if_needed()
+        self.log_event('INFO', 'SQLite wallet store opened')
 
     def _connect(self):
         connection = sqlite3.connect(self.path)
@@ -59,8 +62,35 @@ class WalletStore:
                 monthly_limit REAL NOT NULL CHECK (monthly_limit > 0),
                 PRIMARY KEY (user_id, category)
             );
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                level TEXT NOT NULL,
+                event TEXT NOT NULL,
+                details TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at);
         ''')
         self.connection.commit()
+
+    def log_event(self, level, event, details=''):
+        """Write a privacy-safe event to SQLite and the rotating file log."""
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            with self.connection:
+                self.connection.execute('''
+                    INSERT INTO logs (created_at, level, event, details)
+                    VALUES (?, ?, ?, ?)
+                ''', (created_at, level.upper(), event, details))
+                self.connection.execute('''
+                    DELETE FROM logs
+                    WHERE id NOT IN (SELECT id FROM logs ORDER BY id DESC LIMIT 5000)
+                ''')
+        except sqlite3.Error:
+            logger.exception('Could not write an event to the SQLite log table')
+
+        numeric_level = getattr(logging, level.upper(), logging.INFO)
+        logger.log(numeric_level, '%s%s', event, f': {details}' if details else '')
 
     def _migrate_json_if_needed(self):
         user_count = self.connection.execute('SELECT COUNT(*) FROM users').fetchone()[0]
@@ -119,6 +149,10 @@ class WalletStore:
                 user.pop('password', None)
             with self.legacy_path.open('w', encoding='utf-8') as legacy_file:
                 json.dump(legacy_data, legacy_file, indent=4, ensure_ascii=False)
+            self.log_event(
+                'INFO', 'Imported legacy JSON data',
+                f'{len(users)} users; {len(transactions)} transactions',
+            )
 
     def close(self):
         self.connection.close()
@@ -143,8 +177,10 @@ class WalletStore:
                     user['id'], user['name'], user['email'], user['stored_salt'],
                     user['stored_hash'], user['salary'], user['salary'],
                 ))
+            self.log_event('INFO', 'Account created')
             return True
         except sqlite3.IntegrityError:
+            self.log_event('WARNING', 'Account creation rejected by a database constraint')
             return False
 
     def change_password(self, user_id, salt, hashed):
@@ -153,6 +189,7 @@ class WalletStore:
                 'UPDATE users SET stored_salt = ?, stored_hash = ? WHERE id = ?',
                 (salt, hashed, user_id),
             )
+        self.log_event('INFO', 'Account password changed')
 
     def transactions(self, user_id, filters=None):
         filters = filters or {}
@@ -195,10 +232,12 @@ class WalletStore:
                 'UPDATE users SET balance = balance + ? WHERE id = ?',
                 (balance_change, user_id),
             )
+        self.log_event('INFO', 'Transaction added')
 
     def update_transaction(self, user_id, transaction_id, updated):
         current = self.transaction_by_id(user_id, transaction_id)
         if current is None:
+            self.log_event('WARNING', 'Transaction edit requested for a missing transaction')
             return False
         old_effect = current['amount'] * (1 if current['type'] == 'Income' else -1)
         new_effect = updated['amount'] * (1 if updated['type'] == 'Income' else -1)
@@ -215,11 +254,13 @@ class WalletStore:
                 'UPDATE users SET balance = balance + ? WHERE id = ?',
                 (new_effect - old_effect, user_id),
             )
+        self.log_event('INFO', 'Transaction edited')
         return True
 
     def delete_transaction(self, user_id, transaction_id):
         transaction = self.transaction_by_id(user_id, transaction_id)
         if transaction is None:
+            self.log_event('WARNING', 'Transaction deletion requested for a missing transaction')
             return False
         effect = transaction['amount'] * (1 if transaction['type'] == 'Income' else -1)
         with self.connection:
@@ -231,6 +272,7 @@ class WalletStore:
                 'UPDATE users SET balance = balance - ? WHERE id = ?',
                 (effect, user_id),
             )
+        self.log_event('INFO', 'Transaction deleted')
         return True
 
     def totals(self, user_id, filters=None):
@@ -256,6 +298,7 @@ class WalletStore:
                 ON CONFLICT(user_id, category)
                 DO UPDATE SET monthly_limit = excluded.monthly_limit
             ''', (user_id, category, monthly_limit))
+        self.log_event('INFO', 'Monthly budget saved')
 
     def budgets(self, user_id):
         return self.connection.execute(
@@ -284,6 +327,7 @@ class WalletStore:
             self.connection.backup(destination)
         finally:
             destination.close()
+        self.log_event('INFO', 'SQLite backup created')
         return backup_path
 
     def list_backups(self):
@@ -318,4 +362,5 @@ class WalletStore:
         finally:
             self.connection = self._connect()
             self._create_schema()
+        self.log_event('INFO', 'SQLite backup restored')
 
