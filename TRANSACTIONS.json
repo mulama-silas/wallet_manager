@@ -1,0 +1,19 @@
+{
+    "b71f80d9": {
+        "name": "Silas Omulama",
+        "email": "silas@gmail.com",
+        "stored_salt": "1477ecabf3e53efa337f99b8cdef81b4",
+        "stored_hash": "00bf071d6dd68307648bde3e6ed1867a31e98d5d518270161de761191c133b7a",
+        "salary": 15000.0,
+        "balance": 16000.0,
+        "transactions": [
+            {
+                "id": "916f70b4",
+                "type": "Income",
+                "amount": 1000.0,
+                "category": "Bonus",
+                "created_at": "2026-10-17 13:39:47"
+            }
+        ]
+    }
+}
